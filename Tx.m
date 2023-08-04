@@ -7,28 +7,41 @@ let
     #"Renamed Columns1" = Table.RenameColumns(#"Invoke Custom Function1", {"Name", "Source.Name"}),
     #"Removed Other Columns1" = Table.SelectColumns(#"Renamed Columns1", {"Source.Name", "Transform File (7)"}),
     #"Expanded Table Column1" = Table.ExpandTableColumn(#"Removed Other Columns1", "Transform File (7)", Table.ColumnNames(#"Transform File (7)"(#"Sample File (6)"))),
-    #"Added Conditional Column" = Table.AddColumn(#"Expanded Table Column1", "IsColumn1Year", each if Value.Is([Column1], type number) then "Yes" else "No", type text),
-    #"Filtered Rows2" = Table.SelectRows(#"Added Conditional Column", each ([IsColumn1Year] = "Yes")),
-    #"Removed Columns" = Table.RemoveColumns(#"Filtered Rows2",{"Column1", "Column2", "Column3"}),
-    #"Renamed Columns" = Table.RenameColumns(#"Removed Columns",{{"Column4", "Date"}}),
-    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns",{{"Date", type date}}),
-    #"Renamed Columns2" = Table.RenameColumns(#"Changed Type",{{"Column5", "Task Number"}}),
-    #"Removed Columns1" = Table.RemoveColumns(#"Renamed Columns2",{"Column6", "Column7"}),
-    #"Renamed Columns3" = Table.RenameColumns(#"Removed Columns1",{{"Column8", "Task Name"}}),
-    #"Removed Columns2" = Table.RemoveColumns(#"Renamed Columns3",{"Project Detail Transactions"}),
-    #"Renamed Columns4" = Table.RenameColumns(#"Removed Columns2",{{"Column10", "Exp Code"}}),
-    #"Removed Columns3" = Table.RemoveColumns(#"Renamed Columns4",{"Column11"}),
-    #"Renamed Columns5" = Table.RenameColumns(#"Removed Columns3",{{"Column12", "Exp Name"}}),
-    #"Removed Columns4" = Table.RemoveColumns(#"Renamed Columns5",{"Column13", "Column15"}),
-    #"Changed Type1" = Table.TransformColumnTypes(#"Removed Columns4",{{"Column16", Currency.Type}}),
-    #"Renamed Columns6" = Table.RenameColumns(#"Changed Type1",{{"Column16", "Amount"}}),
-    #"Removed Columns5" = Table.RemoveColumns(#"Renamed Columns6",{"Column17", "Column18", "Column19", "Column20", "Column21", "Column22", "Column23", "Column24", "Column25", "Column26", "Column27", "Column28"}),
-    #"Renamed Columns7" = Table.RenameColumns(#"Removed Columns5",{{"Column29", "Comment"}}),
-    #"Removed Columns6" = Table.RemoveColumns(#"Renamed Columns7",{"Column30", "Column31", "Column33", "Column34", "Column35"}),
-    #"Renamed Columns8" = Table.RenameColumns(#"Removed Columns6",{{"Column36", "Invoice Number"}}),
-    #"Added Conditional Column1" = Table.AddColumn(#"Renamed Columns8", "Vendor", each if [Column32] = "" then [Task Name] else [Column32]),
-    #"Removed Columns7" = Table.RemoveColumns(#"Added Conditional Column1",{"Column32"}),
-    #"Inserted Text Before Delimiter" = Table.AddColumn(#"Removed Columns7", "Text Before Delimiter", each Text.BeforeDelimiter([Source.Name], "-"), type text),
-    #"Renamed Columns9" = Table.RenameColumns(#"Inserted Text Before Delimiter",{{"Text Before Delimiter", "Project Number"}, {"Column14", "Resource"}})
+    #"Changed Type" = Table.TransformColumnTypes(#"Expanded Table Column1",{{"Date", type date}}),
+    #"Added Conditional Column1" = Table.AddColumn(#"Changed Type" , "Vendor", each if [Vendor Name] = null then [Task Desc] else [Vendor Name]),
+    #"Inserted Text Before Delimiter" = Table.AddColumn(#"Added Conditional Column1", "Project Number", each Text.BeforeDelimiter([Source.Name], "-"), type text),
+    #"Removed Columns8" = Table.RemoveColumns(#"Inserted Text Before Delimiter",{"Source.Name"}),
+    #"Merged Queries" = Table.NestedJoin(#"Removed Columns8", {"Project Number"}, Projects, {"ProjectNumber"}, "Projects", JoinKind.Inner),
+    #"Expanded Projects" = Table.ExpandTableColumn(#"Merged Queries", "Projects", {"ContractNumber"}, {"ContractNumber"}),
+    #"Added Conditional Column2" = Table.AddColumn(#"Expanded Projects", "IsProgressClaim", each ([Resource] <> null and Text.Contains([Resource], "021")),type logical),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Added Conditional Column2",{{"GL Year", Int64.Type}, {"Period", Int64.Type},{"Amount", Currency.Type}, {"Quantity", type number}, {"Line No", Int64.Type}}),
+    #"columns to be text" = Table.SelectRows(Table.Schema(#"Changed Type1"), each ([TypeName] = "Any.Type")),
+    setAnyToText = Table.TransformColumnTypes(#"Changed Type1", List.Transform(#"columns to be text"[Name], each {_, type text})),
+    #"Renamed Columns" = Table.RenameColumns(setAnyToText,{{"Task No","Task Number"}
+,{"Task Desc","Task Name"}
+,{"Expenditure Type","Exp Code"}
+,{"Expenditure Type Desc","Exp Name"}
+,{"Invoice Num","Invoice Number"}
+}),
+
+
+    selectCols = Table.SelectColumns(#"Renamed Columns",{"Date"
+,"Task Number"
+,"Task Name"
+,"Exp Code"
+,"Exp Name"
+,"Resource"
+,"Amount"
+,"Comment"
+,"Invoice Number"
+,"Vendor"
+,"Project Number"
+,"ContractNumber"
+,"IsProgressClaim"
+}),
+
+    BufferMyTable = Table.Buffer(selectCols),
+    #"Inserted Merged Column" = Table.AddColumn(BufferMyTable, "Task Description", each Text.Combine({[Task Number], [Task Name]}, " "), type text),
+    #"Inserted Merged Column1" = Table.AddColumn(#"Inserted Merged Column", "Expenditure Description", each Text.Combine({[Exp Code], [Exp Name]}, " "), type text)
 in
-    #"Renamed Columns9"
+    #"Inserted Merged Column1"
