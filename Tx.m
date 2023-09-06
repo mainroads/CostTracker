@@ -1,5 +1,5 @@
 let
-    Source = SharePoint.Files("https://mainroads.sharepoint.com/teams/MR-30000597-MEBD-PRJ-Commercial/", [ApiVersion = 15]),
+    Source = Folder.Files("\\dacsrv01\prototyp\Project Managers\Delpach\Report07"),
     #"Filtered Rows" = Table.SelectRows(Source, each ([Extension] = ".xlsx" or [Extension] = ".XLSX")),
     #"Filtered Rows1" = Table.SelectRows(#"Filtered Rows", each Text.Contains([Name], "-FMS_PA_Report07")),
     #"Filtered Hidden Files1" = Table.SelectRows(#"Filtered Rows1", each [Attributes]?[Hidden]? <> true),
@@ -8,7 +8,7 @@ let
     #"Removed Other Columns1" = Table.SelectColumns(#"Renamed Columns1", {"Source.Name", "Transform File (7)"}),
     #"Expanded Table Column1" = Table.ExpandTableColumn(#"Removed Other Columns1", "Transform File (7)", Table.ColumnNames(#"Transform File (7)"(#"Sample File (6)"))),
     #"Changed Type" = Table.TransformColumnTypes(#"Expanded Table Column1",{{"Date", type date}}),
-    #"Added Conditional Column1" = Table.AddColumn(#"Changed Type" , "Vendor", each if [Vendor Name] = null then [Task Desc] else [Vendor Name]),
+    #"Added Conditional Column1" = Table.AddColumn(#"Changed Type" , "Vendor", each if [Vendor Name] = null then [Expenditure Type Desc] else [Vendor Name]),
     #"Inserted Text Before Delimiter" = Table.AddColumn(#"Added Conditional Column1", "Project Number", each Text.BeforeDelimiter([Source.Name], "-"), type text),
     #"Removed Columns8" = Table.RemoveColumns(#"Inserted Text Before Delimiter",{"Source.Name"}),
     #"Merged Queries" = Table.NestedJoin(#"Removed Columns8", {"Project Number"}, Projects, {"ProjectNumber"}, "Projects", JoinKind.Inner),
