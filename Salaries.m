@@ -1,13 +1,67 @@
 let
+    // 1. Retrieve files from SharePoint
     Source = SharePoint.Files("https://mainroads.sharepoint.com/teams/MR-30000597-MEBD-PRJ-Commercial/", [ApiVersion = 15]),
     #"Filtered Rows" = Table.SelectRows(Source, each ([Extension] = ".xlsx" or [Extension] = ".XLSX")),
     #"Filtered Rows1" = Table.SelectRows(#"Filtered Rows", each Text.Contains([Name], "-FMS_PA_Report07")),
     #"Filtered Hidden Files1" = Table.SelectRows(#"Filtered Rows1", each [Attributes]?[Hidden]? <> true),
-    #"Invoke Custom Function1" = Table.AddColumn(#"Filtered Hidden Files1", "Transform File (7)", each #"Transform File (7)"([Content])),
-    #"Renamed Columns1" = Table.RenameColumns(#"Invoke Custom Function1", {"Name", "Source.Name"}),
-    #"Removed Other Columns1" = Table.SelectColumns(#"Renamed Columns1", {"Source.Name", "Transform File (7)"}),
-    #"Expanded Table Column1" = Table.ExpandTableColumn(#"Removed Other Columns1", "Transform File (7)", Table.ColumnNames(#"Transform File (7)"(#"Sample File (6)"))),
-    #"Changed Type" = Table.TransformColumnTypes(#"Expanded Table Column1",{{"Date", type date}}),
+
+    // 2. Import the Excel workbooks
+    #"Imported Excel" = Table.AddColumn(#"Filtered Hidden Files1", "Imported Excel", each Excel.Workbook([Content], true)),
+    #"Renamed Columns1" = Table.RenameColumns(#"Imported Excel", {{"Name", "Source.Name"}}),
+
+    // 3. Extract the worksheet "FMS_PA_Report07_Resource" from each workbook
+    #"Extracted Resource Sheet" = Table.AddColumn(#"Renamed Columns1", "FMS_PA_Report07_Resource", each 
+        let
+            wb = [Imported Excel],
+            resourceTable = Table.SelectRows(wb, each ([Item] = "FMS_PA_Report07_Resource"))
+        in
+            if Table.IsEmpty(resourceTable) then null else resourceTable{0}[Data]
+    ),
+    #"Filtered Hidden Files2" = Table.SelectRows(#"Extracted Resource Sheet", each [Attributes]?[Hidden]? <> true),
+    #"Kept Necessary Columns" = Table.SelectColumns(#"Filtered Hidden Files2", {"Source.Name", "FMS_PA_Report07_Resource"}),
+
+    // 4. Define a function to transform the Resource sheet table from each file
+    TransformResource = (tbl as nullable table) as table =>
+        if tbl = null then
+            #table({}, {})
+        else
+            let
+                Skipped = Table.Skip(tbl, 8),
+                Promoted = Table.PromoteHeaders(Skipped, [PromoteAllScalars=true]),
+                ExpectedColumns = {
+                    "GL Year", "Period", "Date", "Task No", "Task Desc", "Expenditure Type", 
+                    "Expenditure Type Desc", "Resource", "Amount", "Quantity", "Expenditure Item ID", 
+                    "Orig Transaction Reference", "Line No", "Document", "Transaction Source", 
+                    "GL Batch Name", "Comment", "Vendor Name", "Purchase order no", "Agency Specific Contract", 
+                    "GLAcct", "Invoice Num"
+                },
+                AddMissingColumns = (t as table, expected as list) as table =>
+                    let
+                        ExistingColumns = Table.ColumnNames(t),
+                        MissingColumns = List.Difference(expected, ExistingColumns),
+                        TableWithAdded = List.Accumulate(
+                            MissingColumns,
+                            t,
+                            (state, current) => Table.AddColumn(state, current, each null)
+                        )
+                    in
+                        Table.ReorderColumns(TableWithAdded, expected),
+                Normalized = AddMissingColumns(Promoted, ExpectedColumns)
+            in
+                Normalized,
+
+    // 5. Apply the transformation to each file's resource sheet
+    #"Transformed Resource" = Table.AddColumn(#"Kept Necessary Columns", "TransformedResource", each TransformResource([FMS_PA_Report07_Resource])),
+    #"Removed Original Sheet" = Table.RemoveColumns(#"Transformed Resource",{"FMS_PA_Report07_Resource"}),
+
+    // 6. Expand the normalized resource data.
+    ExpandedResource = Table.ExpandTableColumn(
+        #"Removed Original Sheet", 
+        "TransformedResource", 
+        Table.ColumnNames(#"Removed Original Sheet"{0}[TransformedResource])
+    ),
+
+    #"Changed Type" = Table.TransformColumnTypes(ExpandedResource,{{"Date", type date}}),
     #"Added Conditional Column1" = Table.AddColumn(#"Changed Type" , "Vendor", each if [Vendor Name] = null then [Expenditure Type Desc] else [Vendor Name]),
     #"Inserted Text Before Delimiter" = Table.AddColumn(#"Added Conditional Column1", "Project Number", each Text.BeforeDelimiter([Source.Name], "-"), type text),
     #"Removed Columns8" = Table.RemoveColumns(#"Inserted Text Before Delimiter",{"Source.Name"}),
