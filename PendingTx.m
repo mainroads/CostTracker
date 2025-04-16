@@ -12,7 +12,9 @@ let
     #"Renamed Columns" = Table.RenameColumns(#"Removed Columns",{{"Line Description", "Tx Description"}, {"ProjectNumber", "Project Number"}}),
     #"Changed Type1" = Table.TransformColumnTypes(#"Renamed Columns",{{"Project Number", type text}, {"Amount", Currency.Type}}),
     #"Renamed Columns2" = Table.RenameColumns(#"Changed Type1",{{"IncurredDate", "Date"}}),
-    #"Merged Queries" = Table.NestedJoin(#"Renamed Columns2", {"Invoice Number"}, Tx, {"Invoice Number"}, "Tx", JoinKind.LeftAnti),
-    #"Filtered Rows1" = Table.SelectRows(#"Merged Queries", each [Project Number] <> null and [Project Number] <> "")
+    #"Filtered Rows1" = Table.SelectRows(#"Renamed Columns2", each [Project Number] <> null and [Project Number] <> ""),
+    #"Merged Queries" = Table.NestedJoin(#"Filtered Rows1", {"Invoice Number"}, Tx, {"Invoice Number"}, "Tx", JoinKind.LeftAnti),
+    #"Removed Columns1" = Table.RemoveColumns(#"Merged Queries",{"Tx"}),
+    bufferMeSideways = Table.Buffer(#"Removed Columns1")
 in
-    #"Filtered Rows1"
+    bufferMeSideways
