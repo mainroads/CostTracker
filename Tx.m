@@ -108,9 +108,10 @@ let
     #"Replaced Value1" = Table.ReplaceValue(#"Added Vendor","Randstad Pty Ltd","Staff Costs (Contractor)",Replacer.ReplaceText,{"Vendor"}),
     #"Added IsAccrual" = Table.AddColumn(#"Replaced Value1", "IsAccrual", each try if Text.Contains(Text.Lower([Comment]), "accrual") then true else false otherwise false),
     setIsAccrualToBinary = Table.TransformColumnTypes(#"Added IsAccrual", {{"IsAccrual", type logical}}),
-    #"Added isProgressClaim" = Table.AddColumn(setIsAccrualToBinary, "IsProgressClaim", each (
+    #"Replaced Value" = Table.ReplaceValue(setIsAccrualToBinary,"Contracts-Infra-Road Infrastructure Construction and Maintenance","Georgiou Group Pty Ltd",Replacer.ReplaceText,{"Vendor"}),
+    #"Added isProgressClaim" = Table.AddColumn(#"Replaced Value", "IsProgressClaim", each (
         if [Resource] <> null and Text.Contains([Resource], "021") then true
-        else if [Resource] = null and [Vendor Name] <> null and Text.Contains(Text.Lower([Vendor Name]), "georgiou") then true
+        else if [Resource] = null and [Vendor] <> null and Text.Contains(Text.Lower([Vendor]), "georgiou") then true
         else false
     ), type logical),
     #"Renamed Columns3" = Table.RenameColumns(#"Added isProgressClaim",{{"Invoice Num", "Invoice Number"}}),
@@ -120,7 +121,6 @@ let
     #"Filtered Rows3" = Table.SelectRows(#"Changed Type2", each ([Date] <> null and [Date] <> "")),
     #"Changed Type3" = Table.TransformColumnTypes(#"Filtered Rows3",{{"Date", type date}}),
     #"Replaced Errors" = Table.ReplaceErrorValues(#"Changed Type3", {{"Amount", 0}}),
-    #"Replaced Value2" = Table.ReplaceValue(#"Replaced Errors","Randstand","Staff Costs (Contractor)",Replacer.ReplaceText,{"Vendor"}),
-    #"Replaced Value" = Table.ReplaceValue(#"Replaced Value2","Contracts-Infra-Road Infrastructure Construction and Maintenance","Georgiou Group Pty Ltd",Replacer.ReplaceText,{"Vendor"})
+    #"Replaced Value2" = Table.ReplaceValue(#"Replaced Errors","Randstand","Staff Costs (Contractor)",Replacer.ReplaceText,{"Vendor"})
 in
-    #"Replaced Value"
+    #"Replaced Value2"
