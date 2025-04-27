@@ -1,12 +1,17 @@
 let
     Source = SharePoint.Files("https://mainroads.sharepoint.com/teams/mr-30000597-mebd-con-Commercial/", [ApiVersion = 15]),
+    // Filter for relevant files
     #"Filtered Rows" = Table.SelectRows(Source, each Text.StartsWith([Name], "MEBD-C15121-O-CO-REG-0001")),
     #"Filtered Hidden Files1" = Table.SelectRows(#"Filtered Rows", each [Attributes]?[Hidden]? <> true),
-    #"Invoke Custom Function1" = Table.AddColumn(#"Filtered Hidden Files1", "Transform File (10)", each #"Transform File (10)"([Content])),
-    #"Renamed Columns1" = Table.RenameColumns(#"Invoke Custom Function1", {"Name", "Source.Name"}),
-    #"Removed Other Columns1" = Table.SelectColumns(#"Renamed Columns1", {"Source.Name", "Transform File (10)"}),
-    #"Expanded Table Column1" = Table.ExpandTableColumn(#"Removed Other Columns1", "Transform File (10)", Table.ColumnNames(#"Transform File (10)"(#"Sample File (2)"))),
-    #"Changed Type" = Table.TransformColumnTypes(#"Expanded Table Column1",{{"Source.Name", type text}, {"Date Raised", type date}, {"Potential Variation #", type text}, {"Description", type text}, {"Closed", type text}, {"Quote value", type any}, {"Contrator Ref #", type text}, {"DoA Approval TRIM #", type text}, {"Variation #", type text}, {"Variation Letter TRIM #", type text}, {"Next Action", type text}, {"Action with", type text}, {"Revised Contract Sum", type number}}),
+    // Get file content as tables and combine them
+    #"Imported Tables" = Table.AddColumn(#"Filtered Hidden Files1", "Table", each Excel.Workbook([Content])),
+    #"Expanded Table" = Table.ExpandTableColumn(#"Imported Tables", "Table", {"Item", "Data"}),
+    #"Filtered PV Sheets" = Table.SelectRows(#"Expanded Table", each [Item] = "PV"),
+    // Expand only the 'Data' column, keep 'Name' for later
+    #"Expanded Data" = Table.TransformColumns(#"Filtered PV Sheets", {"Data", each Table.PromoteHeaders(_)}),
+    #"Appended Data" = Table.AddColumn(#"Expanded Data", "AppendedTable", each Table.AddColumn([Data], "Source.Name", (x) => [Name])),
+    #"Combined Tables" = Table.Combine(#"Appended Data"[AppendedTable]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Combined Tables",{{"Source.Name", type text}, {"Date Raised", type date}, {"Potential Variation #", type text}, {"Description", type text}, {"Closed", type text}, {"Quote value", type any}, {"Contrator Ref #", type text}, {"DoA Approval TRIM #", type text}, {"Variation #", type text}, {"Variation Letter TRIM #", type text}, {"Next Action", type text}, {"Action with", type text}, {"Revised Contract Sum", type number}}),
     #"Removed Columns" = Table.RemoveColumns(#"Changed Type",{"Source.Name"}),
     #"Filtered Rows1" = Table.SelectRows(#"Removed Columns", each ([Date Raised] <> null)),
     #"Renamed Columns" = Table.RenameColumns(#"Filtered Rows1",{{"Potential Variation #", "PV ID"}, {"Variation Letter TRIM #", "TRIM ID"}}),
