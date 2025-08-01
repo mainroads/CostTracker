@@ -7,20 +7,17 @@ let
 
     // 2. Import the Excel workbooks
     #"Imported Excel" = Table.AddColumn(#"Filtered Hidden Files1", "Imported Excel", each Excel.Workbook([Content], true)),
-    #"Renamed Columns1" = Table.RenameColumns(#"Imported Excel", {{"Name", "Source.Name"}}),
-
-    // 3. Extract the worksheet "FMS_PA_Report07_Resource" from each workbook
-    #"Extracted Resource Sheet" = Table.AddColumn(#"Renamed Columns1", "FMS_PA_Report07_Resource", each 
+    #"Renamed Columns1" = Table.RenameColumns(#"Imported Excel", {{"Name", "Source.Name"}}),    // 3. Extract the worksheet starting with "FMS" from each workbook
+    #"Extracted Resource Sheet" = Table.AddColumn(#"Renamed Columns1", "FMS_Resource_Sheet", each 
         let
             wb = [Imported Excel],
-            resourceTable = Table.SelectRows(wb, each ([Item] = "FMS_PA_Report07_Resource"))
+            resourceTable = Table.SelectRows(wb, each Text.StartsWith([Item], "FMS"))
         in
             if Table.IsEmpty(resourceTable) then null else resourceTable{0}[Data]
     ),
     #"Filtered Hidden Files2" = Table.SelectRows(#"Extracted Resource Sheet", each [Attributes]?[Hidden]? <> true),
-    
-    // 4. Retain only the columns needed: in this case, the source name and the resource sheet data
-    #"Kept Necessary Columns" = Table.SelectColumns(#"Filtered Hidden Files2", {"Source.Name", "FMS_PA_Report07_Resource"}),
+      // 4. Retain only the columns needed: in this case, the source name and the resource sheet data
+    #"Kept Necessary Columns" = Table.SelectColumns(#"Filtered Hidden Files2", {"Source.Name", "FMS_Resource_Sheet"}),
 
     // 5. Define a function to transform the Resource sheet table from each file
     TransformResource = (tbl as nullable table) as table =>
@@ -56,10 +53,9 @@ let
                 Normalized = AddMissingColumns(Promoted, ExpectedColumns)
             in
                 Normalized,
-                
-    // 6. Apply the transformation to each file's resource sheet
-    #"Transformed Resource" = Table.AddColumn(#"Kept Necessary Columns", "TransformedResource", each TransformResource([FMS_PA_Report07_Resource])),
-    #"Removed Original Sheet" = Table.RemoveColumns(#"Transformed Resource",{"FMS_PA_Report07_Resource"}),
+                  // 6. Apply the transformation to each file's resource sheet
+    #"Transformed Resource" = Table.AddColumn(#"Kept Necessary Columns", "TransformedResource", each TransformResource([FMS_Resource_Sheet])),
+    #"Removed Original Sheet" = Table.RemoveColumns(#"Transformed Resource",{"FMS_Resource_Sheet"}),
     
     // 7. Expand the normalized resource data.
     // This dynamically expands the columns from the first non-null transformed resource.

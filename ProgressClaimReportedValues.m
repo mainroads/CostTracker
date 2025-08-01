@@ -6,10 +6,15 @@ let
     #"Filtered Rows3" = Table.SelectRows(#"Filtered Rows2", each ([Name] <> "MEBD-C15121-O-CO-PC-00NN Progress Claim for Works in Month Year.xlsm")),
     #"Sorted Rows" = Table.Sort(#"Filtered Rows3",{{"Folder Path", Order.Ascending}}),
     #"Filtered Hidden Files1" = Table.SelectRows(#"Sorted Rows", each [Attributes]?[Hidden]? <> true),
-    #"Invoke Custom Function1" = Table.AddColumn(#"Filtered Hidden Files1", "Transform File (11)", each #"Transform File (11)"([Content])),
-    #"Renamed Columns1" = Table.RenameColumns(#"Invoke Custom Function1", {"Name", "Source.Name"}),
-    #"Removed Other Columns1" = Table.SelectColumns(#"Renamed Columns1", {"Source.Name", "Transform File (11)"}),
-    #"Expanded Table Column1" = Table.ExpandTableColumn(#"Removed Other Columns1", "Transform File (11)", Table.ColumnNames(#"Transform File (11)"(#"Sample File (7)"))),
+    // Directly extract and promote headers from 'Payment Calcs' sheet in each file
+    #"Get Payment Calcs Sheet" = Table.AddColumn(#"Filtered Hidden Files1", "ExtractedData", each let
+        wb = Excel.Workbook([Content], null, true),
+        sheet = wb{[Item="Payment Calcs", Kind="Sheet"]}[Data],
+        promoted = Table.PromoteHeaders(sheet, [PromoteAllScalars=true])
+    in promoted),
+    #"Renamed Columns1" = Table.RenameColumns(#"Get Payment Calcs Sheet", {"Name", "Source.Name"}),
+    #"Removed Other Columns1" = Table.SelectColumns(#"Renamed Columns1", {"Source.Name", "ExtractedData"}),
+    #"Expanded Table Column1" = Table.ExpandTableColumn(#"Removed Other Columns1", "ExtractedData", Table.ColumnNames(#"Get Payment Calcs Sheet"{0}[ExtractedData]), Table.ColumnNames(#"Get Payment Calcs Sheet"{0}[ExtractedData])),
     #"Changed Type" = Table.TransformColumnTypes(#"Expanded Table Column1",{{"Source.Name", type text}, {"MANDURAH ESTUARY BRIDGE DUPLICATION (MEBD) PROJECT", type any}, {"Column2", type text}, {"Column3", type any}, {"Column4", type any}, {"Column5", type any}, {"Column6", type any}, {"Column7", type any}, {"Column8", type any}, {"Column9", type any}, {"PAYMENT CERTIFICATE No. 1", type text}, {"Column11", type number}, {"Column12", type any}, {"Column13", type any}, {"Column14", type any}, {"Column15", type text}, {"Column16", type text}, {"Column17", type text}, {"Column18", type text}, {"Column19", type any}, {"Column20", type text}}),
     #"Filtered Rows7" = Table.SelectRows(#"Changed Type", each ([Column2] = "TOTAL (Excludes GST)")),
     #"Removed Columns" = Table.RemoveColumns(#"Filtered Rows7",{"PAYMENT CERTIFICATE No. 1", "Column11", "Column12", "Column13", "Column14", "Column15", "Column16", "Column17", "Column18", "Column19", "Column20", "MANDURAH ESTUARY BRIDGE DUPLICATION (MEBD) PROJECT"}),

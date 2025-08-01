@@ -3,14 +3,56 @@ let
     #"Filtered Rows" = Table.SelectRows(Source, each ([Extension] = ".xlsx" or [Extension] = ".XLSX")),
     #"Filtered Rows1" = Table.SelectRows(#"Filtered Rows", each Text.Contains([Name], "-Forecasts")),
     #"Filtered Hidden Files1" = Table.SelectRows(#"Filtered Rows1", each [Attributes]?[Hidden]? <> true),
-    #"Invoke Custom Function1" = Table.AddColumn(#"Filtered Hidden Files1", "Transform File (5)", each #"Transform File (5)"([Content])),
-    #"Renamed Columns1" = Table.RenameColumns(#"Invoke Custom Function1", {"Name", "Source.Name"}),
-    #"Removed Other Columns1" = Table.SelectColumns(#"Renamed Columns1", {"Source.Name", "Transform File (5)"}),
-    #"Expanded Table Column1" = Table.ExpandTableColumn(#"Removed Other Columns1", "Transform File (5)", Table.ColumnNames(#"Transform File (5)"(#"Sample File (3)"))),
-    #"Changed Type" = Table.TransformColumnTypes(#"Expanded Table Column1",{{"Source.Name", type text}, {"ForecastID", Int64.Type}, {"ProjectNumber", Int64.Type}, {"Date", type date}, {"Amount", type number}}),
-    #"Removed Columns" = Table.RemoveColumns(#"Changed Type",{"Source.Name", "ForecastID"}),
-    #"Changed Type1" = Table.TransformColumnTypes(#"Removed Columns",{{"Amount", Currency.Type}, {"Contingency", Currency.Type}}),
-    bufferMeSideways = Table.Buffer(#"Changed Type1"),
-    #"Changed Type2" = Table.TransformColumnTypes(bufferMeSideways,{{"Escalation", Currency.Type}, {"Other", Currency.Type}, {"StaffCosts", Currency.Type}})
+    
+    // Import Excel workbooks and extract the first sheet from each
+    #"Added Excel Data" = Table.AddColumn(#"Filtered Hidden Files1", "Excel Data", each Excel.Workbook([Content])),
+    #"Expanded Excel Data" = Table.ExpandTableColumn(#"Added Excel Data", "Excel Data", {"Name", "Data", "Kind"}, {"Sheet Name", "Sheet Data", "Kind"}),
+    #"Filtered Sheets" = Table.SelectRows(#"Expanded Excel Data", each ([Kind] = "Sheet")),
+    #"Filtered Rows2" = Table.SelectRows(#"Filtered Sheets", each not Text.Contains([Folder Path], "/ss")),
+    
+    // Group by file and take the first sheet from each file
+    #"Grouped by File" = Table.Group(#"Filtered Rows2", {"Name"}, {
+        {"First Sheet", each Table.FirstN(_, 1), type table}
+    }),
+    #"Expanded First Sheet" = Table.ExpandTableColumn(#"Grouped by File", "First Sheet", {"Sheet Data"}, {"Sheet Data"}),
+    
+    // Add a step to normalize each sheet's columns before combining
+    #"Added Normalized Data" = Table.AddColumn(#"Expanded First Sheet", "Normalized Data", each 
+        let
+            sheetData = [Sheet Data],
+            promotedHeaders = Table.PromoteHeaders(sheetData, [PromoteAllScalars=true]),
+            // Define the union of all expected columns
+            allExpectedColumns = {
+                "ForecastID", "ProjectNumber", "Date", "Amount", "ManagementCosts", 
+                "Other", "Other2", "Escalation", "Contingency", "Progress Claim", 
+                "isActual"
+            },
+            existingColumns = Table.ColumnNames(promotedHeaders),
+            missingColumns = List.Difference(allExpectedColumns, existingColumns),
+            // Add missing columns with null values
+            tableWithMissingCols = List.Accumulate(
+                missingColumns,
+                promotedHeaders,
+                (state, current) => Table.AddColumn(state, current, each null)
+            ),
+            // Reorder columns to match expected order
+            reorderedTable = Table.ReorderColumns(tableWithMissingCols, allExpectedColumns)
+        in
+            reorderedTable
+    ),
+    
+    // Remove the original Sheet Data column and expand the normalized data
+    #"Removed Sheet Data" = Table.RemoveColumns(#"Added Normalized Data", {"Sheet Data"}),
+    #"Expanded Normalized Data" = Table.ExpandTableColumn(#"Removed Sheet Data", "Normalized Data", 
+        {"ForecastID", "ProjectNumber", "Date", "Amount", "ManagementCosts", 
+         "Other", "Other2", "Escalation", "Contingency", "Progress Claim", 
+         "isActual"}),
+    
+
+    bufferMeSideways = Table.Buffer(#"Expanded Normalized Data"),
+    #"Changed Type" = Table.TransformColumnTypes(bufferMeSideways,{{"Name", type text}, {"ForecastID", type any}, {"ProjectNumber", type any}, {"Date", type any}, {"Amount", type any}, {"ManagementCosts", type any}, {"Other", type any}, {"Other2", type any}, {"Escalation", type any}, {"Contingency", type any}, {"Progress Claim", type any}, {"isActual", type text}}),
+    #"Filtered Rows3" = Table.SelectRows(#"Changed Type", each ([ForecastID] <> "ForecastID")),
+    #"Removed Columns" = Table.RemoveColumns(#"Filtered Rows3",{"Progress Claim", "isActual"}),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Removed Columns",{{"ForecastID", Int64.Type}, {"ProjectNumber", Int64.Type}, {"Date", type date}, {"Amount", Currency.Type}, {"ManagementCosts", Currency.Type}, {"Other", Currency.Type}, {"Other2", Currency.Type}, {"Escalation", Currency.Type}, {"Contingency", Currency.Type}})
 in
-    #"Changed Type2"
+    #"Changed Type1"
