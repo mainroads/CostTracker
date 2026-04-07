@@ -20,6 +20,19 @@ let
     #"Kept Necessary Columns" = Table.SelectColumns(#"Filtered Hidden Files2", {"Source.Name", "FMS_Resource_Sheet"}),
 
     // 5. Define a function to transform the Resource sheet table from each file
+    ToCamelCase = (text as text) as text =>
+        let
+            LowercaseWords = {"is", "for", "the", "and", "or", "but", "in", "on", "at", "to", "by", "of", "a", "an", "as", "with", "from"},
+            Words = Text.Split(text, " "),
+            Capitalized = List.TransformIndexed(Words, (word, index) =>
+                if word = "" then ""
+                else if List.Contains(LowercaseWords, Text.Lower(word)) and index > 0 then
+                    Text.Lower(word)
+                else
+                    Text.Proper(word)
+            )
+        in
+            Text.Combine(Capitalized, " "),
     TransformResource = (tbl as nullable table) as table =>
         if tbl = null then
             // Return an empty table if the sheet isn’t found
@@ -78,7 +91,7 @@ let
     #"Merged Task Numbers" = Table.NestedJoin(#"Renamed Columns", {"Task Number"}, TaskNumberLookup, {"Task Number"}, "TaskNumbersLookup", JoinKind.LeftOuter),
     #"Expanded Task Numbers" = Table.ExpandTableColumn(#"Merged Task Numbers", "TaskNumbersLookup", {"Task Name"}, {"Lookup Task Name"}),
     BufferMyTable = Table.Buffer(#"Expanded Task Numbers"),
-    #"Inserted Merged Column" = Table.AddColumn(BufferMyTable, "Task Description", each Text.Combine({[Task Number], if [Lookup Task Name] <> null and Text.Trim([Lookup Task Name]) <> "" then [Lookup Task Name] else [Task Name]}, " "), type text),
+    #"Inserted Merged Column" = Table.AddColumn(BufferMyTable, "Task Description", each ToCamelCase(Text.Combine({[Task Number], if [Lookup Task Name] <> null and Text.Trim([Lookup Task Name]) <> "" then [Lookup Task Name] else [Task Name]}, " ")), type text),
     #"Inserted Merged Column1" = Table.AddColumn(#"Inserted Merged Column", "Expenditure Description", each Text.Combine({[Exp Code], [Exp Name]}, " "), type text),
     #"Sorted Rows" = Table.Sort(#"Inserted Merged Column1", {{"Date", Order.Descending}}),
     #"Removed Columns" = Table.RemoveColumns(#"Sorted Rows",{"Column7"}),
