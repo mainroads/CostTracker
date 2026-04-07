@@ -23,16 +23,22 @@ let
     ToCamelCase = (text as text) as text =>
         let
             LowercaseWords = {"is", "for", "the", "and", "or", "but", "in", "on", "at", "to", "by", "of", "a", "an", "as", "with", "from"},
-            Words = Text.Split(text, " "),
-            Capitalized = List.TransformIndexed(Words, (word, index) =>
-                if word = "" then ""
-                else if List.Contains(LowercaseWords, Text.Lower(word)) and index > 0 then
-                    Text.Lower(word)
-                else
-                    Text.Proper(word)
+            words = Text.Split(text, " "),
+            ProcessWords = List.Accumulate(
+                words,
+                {0, {}},
+                (state, word) =>
+                    let
+                        index = state{0},
+                        result = state{1},
+                        newWord = if word = "" then ""
+                            else if index > 0 and List.Contains(LowercaseWords, Text.Lower(word)) then Text.Lower(word)
+                            else Text.Proper(word)
+                    in
+                        {index + 1, List.Combine({result, {newWord}})}
             )
         in
-            Text.Combine(Capitalized, " "),
+            Text.Combine(ProcessWords{1}, " "),
     TransformResource = (tbl as nullable table) as table =>
         if tbl = null then
             // Return an empty table if the sheet isn’t found
