@@ -74,34 +74,42 @@ let
         {"Expenditure Type", "Exp Code"},
         {"Expenditure Type Desc", "Exp Name"}
     }),
-    BufferMyTable = Table.Buffer(#"Renamed Columns"),
-    #"Inserted Merged Column" = Table.AddColumn(BufferMyTable, "Task Description", each Text.Combine({[Task Number], [Task Name]}, " "), type text),
+    TaskNumberLookup = Table.Distinct(Table.SelectColumns(TaskNumbers, {"Task Number", "Task Name"})),
+    #"Merged Task Numbers" = Table.NestedJoin(#"Renamed Columns", {"Task Number"}, TaskNumberLookup, {"Task Number"}, "TaskNumbersLookup", JoinKind.LeftOuter),
+    #"Expanded Task Numbers" = Table.ExpandTableColumn(#"Merged Task Numbers", "TaskNumbersLookup", {"Task Name"}, {"Lookup Task Name"}),
+    BufferMyTable = Table.Buffer(#"Expanded Task Numbers"),
+    #"Inserted Merged Column" = Table.AddColumn(BufferMyTable, "Task Description", each Text.Combine({[Task Number], if [Lookup Task Name] <> null and Text.Trim([Lookup Task Name]) <> "" then [Lookup Task Name] else [Task Name]}, " "), type text),
     #"Inserted Merged Column1" = Table.AddColumn(#"Inserted Merged Column", "Expenditure Description", each Text.Combine({[Exp Code], [Exp Name]}, " "), type text),
     #"Sorted Rows" = Table.Sort(#"Inserted Merged Column1", {{"Date", Order.Descending}}),
-    #"Removed Columns" = Table.RemoveColumns(#"Sorted Rows",{"Column7", "Column14"}),
+    #"Removed Columns" = Table.RemoveColumns(#"Sorted Rows",{"Column7"}),
     #"Changed Type" = Table.TransformColumnTypes(#"Removed Columns",{{"Amount", Currency.Type}}),
-    #"Removed Columns1" = Table.RemoveColumns(#"Changed Type",{"Column16", "Column18", "Quantity", "Column20", "Orig Transaction Reference", "Column23", "Line No", "Transaction Source", "GL Batch Name", "Agency Specific Contract", "GLAcct"}),
-    #"Added Vendor" = Table.AddColumn(#"Removed Columns1", "Vendor", each 
-        if [Vendor Name] <> null and Text.Trim([Vendor Name]) <> "" then
-            [Vendor Name]
-        else if Text.Contains([Comment], "WSP", Comparer.OrdinalIgnoreCase) then
-            "WSP Australia Pty Ltd"
-        else if Text.Contains([Comment], "BG&E", Comparer.OrdinalIgnoreCase) then
-            "BG&E Pty Ltd"
-        else if Text.Contains([Comment], "Jacobs", Comparer.OrdinalIgnoreCase) then
-            "Jacobs Group (Australia) Pty Ltd"
-        else if Text.Contains([Comment], "AAJV", Comparer.OrdinalIgnoreCase) then
-            "AAJV"
-        else if Text.Contains([Exp Name], "Labour", Comparer.OrdinalIgnoreCase) then
-            "Staff Costs (Contractor)"
-        else if Text.Contains([Exp Name], "Wages & Salaries", Comparer.OrdinalIgnoreCase) then
-            "Staff Costs (Main Roads)"
-        else if Text.Contains([Exp Name], "Ins-Principal", Comparer.OrdinalIgnoreCase) then
-            "Principal Controlled Insurance Policy"
-        else
-            [Exp Name]
-    ),
-    #"Replaced Value1" = Table.ReplaceValue(#"Added Vendor","Randstad Pty Ltd","Staff Costs (Contractor)",Replacer.ReplaceText,{"Vendor"}),
+    #"Removed Columns1" = Table.RemoveColumns(#"Changed Type",{"Quantity", "Orig Transaction Reference", "Column23", "Line No", "Transaction Source", "GL Batch Name", "Agency Specific Contract", "GLAcct"}),
+    #"Added Vendor" = Table.AddColumn(#"Removed Columns1", "Vendor", each // inside your Table.AddColumn step for “Vendor”:
+let
+    vVendorName = if [Vendor Name] <> null then Text.Trim([Vendor Name]) else "",
+    vComment    = if [Comment]     <> null then [Comment] else "",
+    vExpName    = if [Exp Name]    <> null then [Exp Name] else ""
+in
+    if vVendorName <> "" then
+        vVendorName
+    else if Text.Contains(vComment, "WSP", Comparer.OrdinalIgnoreCase) then
+        "WSP Australia Pty Ltd"
+    else if Text.Contains(vComment, "BG&E", Comparer.OrdinalIgnoreCase) then
+        "BG&E Pty Ltd"
+    else if Text.Contains(vComment, "Jacobs", Comparer.OrdinalIgnoreCase) then
+        "Jacobs Group (Australia) Pty Ltd"
+    else if Text.Contains(vComment, "AAJV", Comparer.OrdinalIgnoreCase) then
+        "AAJV"
+    else if Text.Contains(vExpName, "Labour", Comparer.OrdinalIgnoreCase) then
+        "Staff Costs (Contractor)"
+    else if Text.Contains(vExpName, "Wages & Salaries", Comparer.OrdinalIgnoreCase) then
+        "Staff Costs (Main Roads)"
+    else if Text.Contains(vExpName, "Ins-Principal", Comparer.OrdinalIgnoreCase) then
+        "Principal Controlled Insurance Policy"
+    else
+        vExpName),
+    #"Filtered Rows4" = Table.SelectRows(#"Added Vendor", each true),
+    #"Replaced Value1" = Table.ReplaceValue(#"Filtered Rows4","Randstad Pty Ltd","Staff Costs (Contractor)",Replacer.ReplaceText,{"Vendor"}),
     #"Added IsAccrual" = Table.AddColumn(#"Replaced Value1", "IsAccrual", each try if Text.Contains(Text.Lower([Comment]), "accrual") then true else false otherwise false),
     setIsAccrualToBinary = Table.TransformColumnTypes(#"Added IsAccrual", {{"IsAccrual", type logical}}),
     #"Replaced Value" = Table.ReplaceValue(setIsAccrualToBinary,"Contracts-Infra-Road Infrastructure Construction and Maintenance","Georgiou Group Pty Ltd",Replacer.ReplaceText,{"Vendor"}),
@@ -111,12 +119,37 @@ let
         else false
     ), type logical),
     #"Renamed Columns3" = Table.RenameColumns(#"Added isProgressClaim",{{"Invoice Num", "Invoice Number"}}),
-    #"Removed Columns2" = Table.RemoveColumns(#"Renamed Columns3",{"Vendor Name", "Purchase order no"}),
+    #"Removed Columns2" = Table.RemoveColumns(#"Renamed Columns3",{"Vendor Name", "Purchase order no", "Lookup Task Name"}),
     #"Filtered Rows2" = Table.SelectRows(#"Removed Columns2", each ([GL Year] <> "GL Year")),
     #"Changed Type2" = Table.TransformColumnTypes(#"Filtered Rows2",{{"Project Number", Int64.Type}}),
     #"Filtered Rows3" = Table.SelectRows(#"Changed Type2", each ([Date] <> null and [Date] <> "")),
     #"Changed Type3" = Table.TransformColumnTypes(#"Filtered Rows3",{{"Date", type date}}),
     #"Replaced Errors" = Table.ReplaceErrorValues(#"Changed Type3", {{"Amount", 0}}),
-    #"Replaced Value2" = Table.ReplaceValue(#"Replaced Errors","Randstand","Staff Costs (Contractor)",Replacer.ReplaceText,{"Vendor"})
+    #"Replaced Value2" =
+        Table.ReplaceValue(
+            #"Replaced Errors",
+            "Randstand",
+            "Staff Costs (Contractor)",
+            Replacer.ReplaceText,
+            {"Vendor"}
+        ),
+
+    #"Replaced Value3" =
+        Table.ReplaceValue(
+            #"Replaced Value2",
+            "Milo Geotechnical Pty Ltd",
+            "Staff Costs (Contractor)",
+            Replacer.ReplaceText,
+            {"Vendor"}
+        ),
+
+    #"Replaced Value4" =
+        Table.ReplaceValue(
+            #"Replaced Value3",
+            "CoreStaff WA Pty Ltd",
+            "Staff Costs (Contractor)",
+            Replacer.ReplaceText,
+            {"Vendor"}
+        )
 in
-    #"Replaced Value2"
+    #"Replaced Value4"

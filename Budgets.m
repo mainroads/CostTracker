@@ -1,10 +1,12 @@
 let
-    Source = SharePoint.Files("https://mainroads.sharepoint.com/teams/MR-30000597-MEBD-PRJ-Commercial/", [ApiVersion = 15]),
-    #"Filtered Rows" = Table.SelectRows(Source, each Text.Contains([Name], "-BudgetData")),
+    Source = SharePoint.Files("https://mainroads.sharepoint.com/teams/MR-30000597-MEBD-PRJ-Commercial", [ApiVersion = 15]),
+    ShowXLSX = Table.SelectRows(Source, each ([Extension] = ".xlsx")),
+    #"Filtered Rows" = Table.SelectRows(ShowXLSX, each Text.Contains([Name], "PendingTx")),
     #"Filtered Hidden Files1" = Table.SelectRows(#"Filtered Rows", each [Attributes]?[Hidden]? <> true),
+    #"Filtered Rows2" = Table.SelectRows(#"Filtered Hidden Files1", each not Text.Contains([Folder Path], "/ss")),
     
     // For each file, extract the first sheet
-    #"Added Custom" = Table.AddColumn(#"Filtered Hidden Files1", "Excel Sheets", each Excel.Workbook([Content])),
+    #"Added Custom" = Table.AddColumn(#"Filtered Rows2", "Excel Sheets", each Excel.Workbook([Content])),
     #"Expanded Excel Sheets" = Table.ExpandTableColumn(#"Added Custom", "Excel Sheets", {"Name", "Data", "Kind"}, {"SheetName", "Data", "Kind"}),
     #"Filtered Sheet Rows" = Table.SelectRows(#"Expanded Excel Sheets", each ([Kind] = "Sheet")),
     
@@ -23,18 +25,28 @@ let
     // Transform data types to match original code
     #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers", {
         {"ProjectNumber", Int64.Type}, 
-        {"FinancialYear", type text}, 
-        {"BudgetValue", type number}
+        {"Supplier", type text}, 
+        {"Line Description", type text}, 
+        {"Amount", Int64.Type}, 
+        {"Invoice Number", type text}, 
+        {"IncurredDate", type date}
     }),
     
-    // Remove any extra columns that might be present in the Excel file
-    #"Selected Columns" = Table.SelectColumns(#"Changed Type", {"ProjectNumber", "FinancialYear", "BudgetValue"}),
-    #"Removed Blank Rows" = Table.SelectRows(#"Selected Columns", each not List.IsEmpty(List.RemoveMatchingItems(Record.FieldValues(_), {"", null}))),
-    #"Changed Type1" = Table.TransformColumnTypes(#"Removed Blank Rows", {{"ProjectNumber", type text}}),
-    #"Inserted Text Before Delimiter" = Table.AddColumn(#"Changed Type1", "Text Before Delimiter", each Text.Combine({"1/7/", Text.Start([FinancialYear], 4)}), type text),
-    #"Changed Type3" = Table.TransformColumnTypes(#"Inserted Text Before Delimiter", {{"Text Before Delimiter", type date}}),
-    #"Renamed Columns" = Table.RenameColumns(#"Changed Type3", {{"Text Before Delimiter", "Date"}}),
-    #"Changed Type2" = Table.TransformColumnTypes(#"Renamed Columns", {{"BudgetValue", Currency.Type}}),
-    bufferMeSideways = Table.Buffer(#"Changed Type2")
+    // Apply the same column transformations as in the original code
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type", {
+        {"Line Description", "Tx Description"}, 
+        {"ProjectNumber", "Project Number"}
+    }),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Renamed Columns", {
+        {"Project Number", type text}, 
+        {"Amount", Currency.Type}
+    }),
+    #"Renamed Columns2" = Table.RenameColumns(#"Changed Type1", {{"IncurredDate", "Date"}}),
+    #"Filtered Rows1" = Table.SelectRows(#"Renamed Columns2", each [Project Number] <> null and [Project Number] <> ""),
+    #"Merged Queries" = Table.NestedJoin(#"Filtered Rows1", {"Invoice Number"}, Tx, {"Invoice Number"}, "Tx", JoinKind.LeftAnti),
+    #"Removed Columns1" = Table.RemoveColumns(#"Merged Queries", {"Tx"}),
+    bufferMeSideways = Table.Buffer(#"Removed Columns1"),
+    columnsToRemove = List.Intersect({Table.ColumnNames(bufferMeSideways), {"30000597-PendingTx.xlsx", "PendingTx"}}),
+    #"Removed Columns" = Table.RemoveColumns(bufferMeSideways, columnsToRemove)
 in
-    bufferMeSideways
+    #"Removed Columns"
